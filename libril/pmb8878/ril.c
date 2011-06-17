@@ -139,12 +139,6 @@ static void setRadioState(RIL_RadioState newState);
 
 static int InSpeakerMode;
 
-#define IPHONE_3G 1
-#define IPHONE_3GS 2
-#define IPAD_1G 3
-
-static int Platform = 0;
-
 void loudspeaker_vol(int vol)
 {
 	char buf[100];
@@ -164,14 +158,8 @@ static void soundPhoneMode()
 	if(!InSpeakerMode)
 		return;
 
-	if(Platform == IPHONE_3G)
-	{
-		at_send_command("AT+XDRV=0,8,0,0", NULL);
-	} else {
-		at_send_command("AT+XDRV=0,4", NULL);
-		at_send_command("AT+XDRV=0,20,0", NULL);
-	}
-
+	at_send_command("AT+XDRV=0,8,0,0", NULL);
+	
 	// mute everything?
 	at_send_command("AT+XDRV=0,1,0,0", NULL);
 	at_send_command("AT+XDRV=0,1,0,1", NULL);
@@ -189,10 +177,7 @@ static void soundPhoneMode()
 
 	loudspeaker_vol(40);
 
-	if(Platform == IPHONE_3G)
-	{
-		at_send_command("AT+XDRV=0,8,1,0", NULL);
-	}
+	at_send_command("AT+XDRV=0,8,1,0", NULL);
 
 	speaker_vol(68);
 
@@ -220,40 +205,8 @@ static void soundSpeakerMode()
 
 	at_send_command("AT+XDRV=0,41,25", NULL);
 
-	if(Platform == IPHONE_3G)
-	{
-		InSpeakerMode = 1;
-		return;
-	}
-
-	// mute everything?
-	at_send_command("AT+XDRV=0,1,0,0", NULL);
-	at_send_command("AT+XDRV=0,1,0,1", NULL);
-	at_send_command("AT+XDRV=0,1,0,2", NULL);
-	at_send_command("AT+XDRV=0,1,0,6", NULL);
-
-	// I really don't know
-	at_send_command("AT+XDRV=0,24,1,1", NULL);
-	at_send_command("AT+XDRV=0,0,2,2", NULL);
-
-	loudspeaker_vol(100);
-	speaker_vol(68);
-
-	// clock
-	// In general, lower is slower and higher is faster, but at some point it loops around.
-	// This may mean the value is a bitset, e.g., AT+XDRV=0,2,2,29 will set it to half speed
-	at_send_command("AT+XDRV=0,2,2,10", NULL);
-
-	// channels?
-	at_send_command("AT+XDRV=0,9,2", NULL);
-
-	// enable i2s?
-	at_send_command("AT+XDRV=0,20,1", NULL);
-
-	// unmute?
-	at_send_command("AT+XDRV=0,3,0", NULL);
-
 	InSpeakerMode = 1;
+	return;
 }
 
 static int clccStateToRILState(int state, RIL_CallState *p_state)
@@ -674,11 +627,7 @@ static void requestGetCurrentCalls(void *data, size_t datalen, RIL_Token t)
 	{
 		soundPhoneMode();
 
-		if(Platform != IPHONE_3G)
-		{
-			at_send_command("AT+XDRV=4,0,0,0,0,0", NULL);
-		}
-
+		at_send_command("AT+XDRV=4,0,0,0,0,0", NULL);
 		at_send_command("AT+XDRV=0,4\r\n", NULL);
 		at_send_command("AT+XDRV=0,20,0\r\n", NULL);
 	}
@@ -2312,30 +2261,6 @@ static void usage(char *s)
 #endif
 }
 
-static void platformDetect()
-{
-	char buff[PROPERTY_VALUE_MAX];
-    if(property_get("ro.product.device", buff, NULL) > 0 && strcmp(buff, "iPhone3G") == 0) {
-		Platform = IPHONE_3G;
-		s_device_path = "/dev/ttyS4";
-	} else if(property_get("ro.product.device", buff, NULL) > 0 && strcmp(buff, "iPhone3GS") == 0) {
-		Platform = IPHONE_3GS;
-		s_device_path = "/dev/ttyS1";
-	}  else if(property_get("ro.product.device", buff, NULL) > 0 && strcmp(buff, "iPad1G") == 0) {
-		Platform = IPAD_1G;	
-		/* THIS IS PROBABLY COMPRETRY WRONG TODO: FIX IT! */
-		s_device_path = "/dev/ttyS1";
-	}
-	
-	if(Platform)
-	switch(Platform) {
-	   case IPHONE_3G: LOGI("Platform: iPhone 3G\n"); break;
-	   case IPHONE_3GS: LOGI("Platform: iPhone 3GS\n"); break;
-	   case IPAD_1G: LOGI("Platform: iPad 1G\n"); break;
-	   default: LOGE("Platform: UNKNOWN!"); break;
-	}
-}
-
 static void *
 mainLoop(void *param)
 {
@@ -2379,10 +2304,7 @@ mainLoop(void *param)
                     /* disable echo on serial ports */
                     struct termios  ios;
                     tcgetattr( fd, &ios );
-		    if(Platform == IPHONE_3G)
-			    ios.c_cflag = B115200 | CRTSCTS | CS8 | CLOCAL | CREAD;
-		    else
-			    ios.c_cflag = B921600 | CRTSCTS | CS8 | CLOCAL | CREAD;
+					ios.c_cflag = B115200 | CRTSCTS | CS8 | CLOCAL | CREAD;
                     ios.c_lflag = 0;  /* disable ECHO, ICANON, etc... */
 		    tcflush(fd, TCIFLUSH);
                     tcsetattr( fd, TCSANOW, &ios );
@@ -2427,8 +2349,6 @@ const RIL_RadioFunctions *RIL_Init(const struct RIL_Env *env, int argc, char **a
     pthread_attr_t attr;
 
     s_rilenv = env;
-
-	platformDetect();
 
     while ( -1 != (opt = getopt(argc, argv, "p:d:s:"))) {
         switch (opt) {
@@ -2475,8 +2395,6 @@ int main (int argc, char **argv)
     int ret;
     int fd = -1;
     int opt;
-
-	platformDetect();
 
     while ( -1 != (opt = getopt(argc, argv, "p:d:"))) {
         switch (opt) {
